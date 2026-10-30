@@ -197,13 +197,6 @@ stdenv.mkDerivation (finalAttrs: {
     libxext
   ];
 
-  preConfigure =
-    lib.optionalString
-      (stdenv.hostPlatform.isDarwin && lib.versionAtLeast stdenv.hostPlatform.darwinMinVersion "11")
-      ''
-        MACOSX_DEPLOYMENT_TARGET=10.16
-      '';
-
   cmakeFlags = [
     "-DCLAD_SOURCE_DIR=${finalAttrs.clad_src}"
     "-DClang_DIR=${finalAttrs.clang}/lib/cmake/clang"
