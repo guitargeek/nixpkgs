@@ -1,0 +1,22 @@
+Install the builtin mathjax distribution together with JSROOT
+
+With builtin_mathjax=ON, the mathjax distribution is only unpacked into
+js/mathjax in the build tree, but nothing installs it: the install rule for
+JSROOT copies the js directory of the source tree. JSROOT loads
+mathjax/es5/tex-svg.js relative to its own location (see
+js/modules/base/latex.mjs), so an installed ROOT always falls back to the
+CDN, and the builtin_mathjax option has no effect for the installation.
+
+Install the distribution next to JSROOT, like in the build tree.
+
+---
+diff --git a/builtins/mathjax/CMakeLists.txt b/builtins/mathjax/CMakeLists.txt
+index 7f25bc56ba1..773a66cc33b 100644
+--- a/builtins/mathjax/CMakeLists.txt
++++ b/builtins/mathjax/CMakeLists.txt
+@@ -8,3 +8,5 @@ ExternalProject_Add(
+    SOURCE_DIR ${CMAKE_BINARY_DIR}/js/mathjax/
+    TIMEOUT 600
+ )
++
++install(DIRECTORY ${CMAKE_BINARY_DIR}/js/mathjax/ DESTINATION ${CMAKE_INSTALL_JSROOTDIR}/mathjax ${DIR_PERMISSIONS})

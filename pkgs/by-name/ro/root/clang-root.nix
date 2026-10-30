@@ -5,19 +5,19 @@
   apple-sdk,
   cmake,
   git,
-  llvm_20,
+  llvm_22,
   pkg-config,
   python3,
 }:
 
 stdenv.mkDerivation rec {
   pname = "clang-root";
-  version = "20-20260616-01";
+  version = "22-20261028-01";
 
   src = fetchgit {
     url = "https://github.com/root-project/llvm-project";
     tag = "ROOT-llvm${version}";
-    hash = "sha256-WRgM1vuK2vQ5CC/QkKnLtq6d61rfo1bCV9fIxPYWKiU=";
+    hash = "sha256-F8VfCbZ9vCURlqRXYYZQYALDq5P8S2G1D/S1fmyLDPw=";
   };
 
   nativeBuildInputs = [
@@ -26,12 +26,8 @@ stdenv.mkDerivation rec {
     git
   ];
   buildInputs = [
-    llvm_20
+    llvm_22
     python3
-  ];
-
-  patches = [
-    ./Fix-find_package-LLVM-overwriting-LLVM_LINK_LLVM_DYLIB.patch
   ];
 
   preConfigure = ''
@@ -46,7 +42,7 @@ stdenv.mkDerivation rec {
     "-DC_INCLUDE_DIRS=${lib.getDev stdenv.cc.libc}/include"
     "-DLLVM_INCLUDE_TESTS=OFF"
     "-DLLVM_LINK_LLVM_DYLIB=OFF"
-    "-DLLVM_MAIN_SRC_DIR=${llvm_20.src}"
+    "-DLLVM_MAIN_SRC_DIR=${llvm_22.src}"
   ]
   ++ (
     if stdenv.hostPlatform.isDarwin then

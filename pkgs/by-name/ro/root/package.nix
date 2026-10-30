@@ -1,11 +1,13 @@
 {
   stdenv,
   lib,
+  applyPatches,
   blas,
   callPackage,
+  civetweb,
   curl,
   fetchFromGitHub,
-  fetchurl,
+  fetchzip,
   makeWrapper,
   writeText,
   apple-sdk,
@@ -23,7 +25,7 @@
   libGL,
   libxcrypt,
   libxml2,
-  llvm_20,
+  llvm_22,
   lsof,
   lz4,
   libxpm,
@@ -56,28 +58,85 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "root";
-  version = "6.40.04";
+  version = "6.42.00";
 
   passthru = {
     tests = import ./tests { inherit callPackage; };
   };
 
-  src = fetchurl {
-    url = "https://root.cern.ch/download/root_v${finalAttrs.version}.source.tar.gz";
-    hash = "sha256-RK2iU7GTXTS2gBIiIy1Qcx/nxePLz6tHc0yFAxz75NM=";
+  src = fetchFromGitHub {
+    owner = "root-project";
+    repo = "root";
+    tag = "v6-42-00-rc1";
+    hash = "sha256-IVnOl/E9YjhARabCFMEBnfsKY/QZnsJp/ryYdwZIyxs=";
   };
 
-  clad_src = fetchFromGitHub {
-    owner = "vgvassilev";
-    repo = "clad";
-    # Make sure that this is the same tag as in the ROOT build files!
-    # https://github.com/root-project/root/blob/master/interpreter/cling/tools/plugins/clad/CMakeLists.txt#L76
-    tag = "v2.3";
-    hash = "sha256-gEJlQ2Vg9EUX1tslI4HaUnusvdSomsYHiE8mZMygEOw=";
+  # Since ROOT 6.42, the openui5 runtime distribution is no longer bundled
+  # with the sources but downloaded at configure time. The runtime
+  # distribution is a build artifact that is only available as a release
+  # asset, not as a git tag. Make sure that the version matches the one in the
+  # ROOT build files!
+  # https://github.com/root-project/root/blob/master/builtins/openui5/CMakeLists.txt
+  openui5_version = "1.152.0";
+  openui5_src = fetchzip {
+    name = "openui5-runtime-${finalAttrs.openui5_version}";
+    url = "https://github.com/UI5/openui5/releases/download/${finalAttrs.openui5_version}/openui5-runtime-${finalAttrs.openui5_version}.zip";
+    hash = "sha256-M6Hv5WGDSUpp+su+y6mNfhozJ4CJf18UbKYT7uGY5WQ=";
+    # The zip has no single top-level directory
+    stripRoot = false;
+  };
+
+  # mathjax for TMathText rendering in JSROOT. The tarball that ROOT would
+  # download from LCG is identical to the GitHub release. Make sure that the
+  # version matches the one in the ROOT build files!
+  # https://github.com/root-project/root/blob/master/builtins/mathjax/CMakeLists.txt
+  mathjax_src = fetchFromGitHub {
+    owner = "mathjax";
+    repo = "MathJax";
+    tag = "3.2.0";
+    hash = "sha256-sFWdSVktoDBiOgvWv8fZol2GGXbORjf6ieNmd5u/o0g=";
+  };
+
+  clad_src = applyPatches {
+    src = fetchFromGitHub {
+      owner = "vgvassilev";
+      repo = "clad";
+      # Make sure that this is the same tag as in the ROOT build files!
+      # https://github.com/root-project/root/blob/master/interpreter/cling/tools/plugins/clad/CMakeLists.txt#L97
+      tag = "v2.5";
+      hash = "sha256-NIU2Sp8eBMpQ+1bSdykVnJJKTo8KS/2hBVKPAg1MwGg=";
+    };
+    # ROOT would apply these patches itself at build time with git, which
+    # doesn't work on the read-only source in the Nix store. Make sure that
+    # these are the same patches as in the ROOT build files!
+    # https://github.com/root-project/root/blob/master/interpreter/cling/tools/plugins/clad/CMakeLists.txt#L102
+    patches = [
+      "${finalAttrs.src}/interpreter/cling/tools/plugins/clad/patches/lld_lookup_no_default_path.patch"
+    ];
   };
 
   # ROOT requires a patched version of clang
   clang = (callPackage ./clang-root.nix { });
+
+  patches = [
+    # Adds the OPENUI5_SOURCE_DIR CMake variable, analogous to CLAD_SOURCE_DIR
+    ./Allow-using-an-already-unpacked-openui5-runtime-distribution.patch
+    # With builtin_mathjax=ON, ROOT only unpacks mathjax into the build tree
+    # but never installs it next to JSROOT
+    ./Install-the-builtin-mathjax-distribution.patch
+    # Adds the MATHJAX_SOURCE_DIR CMake variable, analogous to CLAD_SOURCE_DIR
+    ./Allow-using-an-already-unpacked-mathjax-distribution.patch
+    # The clad sources are already patched (see clad_src above)
+    ./Do-not-patch-clad-when-an-external-clad-source-directory-is-used.patch
+    # Since ROOT 6.42, rootcling drops all include paths that CMake reports as
+    # compiler default include directories, assuming that cling will find
+    # them on its own. See:
+    # https://github.com/root-project/root/commit/b304aa5942542317442cea603dd57c9bc5345ff2
+    # With the Nix compiler wrapper, the include directories of all
+    # dependencies show up as compiler defaults, but cling only knows about
+    # the ones of the compiler and the C library.
+    ./Only-report-include-directories-known-to-cling-as-compiler-defaults.patch
+  ];
 
   nativeBuildInputs = [
     makeWrapper
@@ -91,6 +150,12 @@ stdenv.mkDerivation (finalAttrs: {
   buildInputs = [
     finalAttrs.clang
     blas
+    (civetweb.override {
+      # ROOT requires civetweb with websocket, zlib and unix domain socket support
+      withWebSockets = true;
+      withZlib = true;
+      withUnixSockets = true;
+    })
     curl
     davix
     fftw
@@ -103,7 +168,7 @@ stdenv.mkDerivation (finalAttrs: {
     libtiff
     libxcrypt
     libxml2
-    llvm_20
+    llvm_22
     lz4
     openssl
     patchRcPathCsh
@@ -132,11 +197,18 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   preConfigure = ''
+    # Remove the bundled third-party sources that are not needed, to make sure
+    # that the system versions are used. The ones that are kept are either
+    # hard-coded builtins without a system alternative, or the ones enabled
+    # explicitly in cmakeFlags.
     for path in builtins/*; do
-      if [[ "$path" != "builtins/openui5" ]] && [[ "$path" != "builtins/rendercore" ]]; then
-        rm -rf "$path"
-      fi
+      case "$(basename "$path")" in
+        bvh|CDT|clib|csg|exprtk|glad|libAfterImage|libmathtext|libtextinput|mathjax|mixmax|openui5|optionparser|rendercore|x3d|xvertext|zip) ;;
+        *) rm -rf "$path" ;;
+      esac
     done
+
+    # Make sure that nothing gets downloaded at build time
     substituteInPlace cmake/modules/SearchInstalledSoftware.cmake \
       --replace-fail 'set(lcgpackages ' '#set(lcgpackages '
 
@@ -154,6 +226,10 @@ stdenv.mkDerivation (finalAttrs: {
     "-DClang_DIR=${finalAttrs.clang}/lib/cmake/clang"
     "-Dbuiltin_clang=OFF"
     "-Dbuiltin_llvm=OFF"
+    "-Dbuiltin_openui5=ON"
+    "-Dbuiltin_mathjax=ON"
+    "-DOPENUI5_SOURCE_DIR=${finalAttrs.openui5_src}"
+    "-DMATHJAX_SOURCE_DIR=${finalAttrs.mathjax_src}"
     "-Dfail-on-missing=ON"
     "-Dfftw3=ON"
     "-Dfitsio=OFF"

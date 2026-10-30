@@ -1,0 +1,58 @@
+Only report include directories known to cling as compiler defaults
+
+Since b304aa59425 ("Drop system headers from cling command line"),
+rootcling does not promote compiler default include directories to -I,
+assuming that cling adds them by itself. Cling, however, only adds the C++
+standard library directories (queried from the compiler at startup), its
+own builtin headers and the system directories in the sysroot (added by
+the clang driver).
+
+The CMAKE_<LANG>_IMPLICIT_INCLUDE_DIRECTORIES that ROOT reports to
+rootcling as compiler defaults can contain more than that: for example, the
+compiler wrappers of Nix or Spack and environment variables like CPATH
+inject the include directories of all dependencies into the implicit
+search path of the compiler. These directories are unknown to cling, so
+dropping them from the rootcling command line and from the dictionary
+payload breaks the dictionary generation (and the runtime interpreter) for
+headers that include dependency headers, e.g.:
+
+  REveElement.hxx:27:10: fatal error: 'nlohmann/json.hpp' file not found
+
+Only report the directories that cling knows about as compiler default
+include directories, so that the other ones are still passed as -I.
+
+---
+diff --git a/cmake/modules/RootMacros.cmake b/cmake/modules/RootMacros.cmake
+index 0cfeaae9b89..3dee2f74650 100644
+--- a/cmake/modules/RootMacros.cmake
++++ b/cmake/modules/RootMacros.cmake
+@@ -754,9 +754,28 @@ function(ROOT_GENERATE_DICTIONARY dictionary)
+      endforeach()
+   endif()
+ 
++  # rootcling does not promote compiler default include directories to -I,
++  # assuming that cling adds them by itself. Cling, however, only adds the
++  # C++ standard library directories (queried from the compiler at startup),
++  # its own builtin headers (instead of the ones of the compiler) and the
++  # system directories in the sysroot (added by the clang driver). Other
++  # directories that the compiler searches implicitly, for example because
++  # they are injected by a compiler wrapper or by environment variables, are
++  # unknown to cling, so they must still be passed as -I. Hence, only report
++  # the directories that cling knows about as compiler default directories.
++  if(CMAKE_SYSROOT)
++    set(sysroot "${CMAKE_SYSROOT}")
++  elseif(APPLE AND CMAKE_OSX_SYSROOT)
++    set(sysroot "${CMAKE_OSX_SYSROOT}")
++  else()
++    set(sysroot "")
++  endif()
+   set(compIncPaths)
+   foreach(implinc IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
+-    list(APPEND compIncPaths "-compilerI${implinc}")
++    string(FIND "${implinc}" "${sysroot}/usr/" sysroot_pos)
++    if(implinc MATCHES "/c\\+\\+(/|$)" OR implinc MATCHES "/lib(64)?/(gcc|clang)/" OR sysroot_pos EQUAL 0)
++      list(APPEND compIncPaths "-compilerI${implinc}")
++    endif()
+   endforeach()
+ 
+   # Keep the byproducts (rdict pcm, rootmap, C++ module) newer than the
