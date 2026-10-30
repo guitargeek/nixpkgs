@@ -14,6 +14,7 @@
   cmake,
   coreutils,
   git,
+  jsroot,
   davix,
   fftw,
   ftgl,
@@ -58,24 +59,25 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "root";
-  version = "6.42.00";
+  version = "6.42.00-unstable-2026-10-29";
 
   passthru = {
     tests = import ./tests { inherit callPackage; };
   };
 
+  # https://github.com/root-project/root/pull/23877
   src = fetchFromGitHub {
-    owner = "root-project";
+    owner = "linev";
     repo = "root";
-    tag = "v6-42-00-rc1";
-    hash = "sha256-IVnOl/E9YjhARabCFMEBnfsKY/QZnsJp/ryYdwZIyxs=";
+    rev = "4a3cce21f3dc8a4932317f24603d79c0c300ee2a";
+    hash = "sha256-moK1eFgAlAoyDABHsGqXNW7KdQ3YCLZUNTKR3wjZdYQ=";
   };
 
   # Since ROOT 6.42, the openui5 runtime distribution is no longer bundled
   # with the sources but downloaded at configure time. The runtime
   # distribution is a build artifact that is only available as a release
-  # asset, not as a git tag. Make sure that the version matches the one in the
-  # ROOT build files!
+  # asset, not as a git tag. See OPENUI5DIR below for how it is passed to
+  # ROOT. Make sure that the version matches the one in the ROOT build files!
   # https://github.com/root-project/root/blob/master/builtins/openui5/CMakeLists.txt
   openui5_version = "1.152.0";
   openui5_src = fetchzip {
@@ -84,17 +86,6 @@ stdenv.mkDerivation (finalAttrs: {
     hash = "sha256-M6Hv5WGDSUpp+su+y6mNfhozJ4CJf18UbKYT7uGY5WQ=";
     # The zip has no single top-level directory
     stripRoot = false;
-  };
-
-  # mathjax for TMathText rendering in JSROOT. The tarball that ROOT would
-  # download from LCG is identical to the GitHub release. Make sure that the
-  # version matches the one in the ROOT build files!
-  # https://github.com/root-project/root/blob/master/builtins/mathjax/CMakeLists.txt
-  mathjax_src = fetchFromGitHub {
-    owner = "mathjax";
-    repo = "MathJax";
-    tag = "3.2.0";
-    hash = "sha256-sFWdSVktoDBiOgvWv8fZol2GGXbORjf6ieNmd5u/o0g=";
   };
 
   clad_src = applyPatches {
@@ -119,13 +110,6 @@ stdenv.mkDerivation (finalAttrs: {
   clang = (callPackage ./clang-root.nix { });
 
   patches = [
-    # Adds the OPENUI5_SOURCE_DIR CMake variable, analogous to CLAD_SOURCE_DIR
-    ./Allow-using-an-already-unpacked-openui5-runtime-distribution.patch
-    # With builtin_mathjax=ON, ROOT only unpacks mathjax into the build tree
-    # but never installs it next to JSROOT
-    ./Install-the-builtin-mathjax-distribution.patch
-    # Adds the MATHJAX_SOURCE_DIR CMake variable, analogous to CLAD_SOURCE_DIR
-    ./Allow-using-an-already-unpacked-mathjax-distribution.patch
     # The clad sources are already patched (see clad_src above)
     ./Do-not-patch-clad-when-an-external-clad-source-directory-is-used.patch
     # Since ROOT 6.42, rootcling drops all include paths that CMake reports as
@@ -203,7 +187,7 @@ stdenv.mkDerivation (finalAttrs: {
     # explicitly in cmakeFlags.
     for path in builtins/*; do
       case "$(basename "$path")" in
-        bvh|CDT|clib|csg|exprtk|glad|libAfterImage|libmathtext|libtextinput|mathjax|mixmax|openui5|optionparser|rendercore|x3d|xvertext|zip) ;;
+        bvh|CDT|clib|csg|exprtk|glad|libAfterImage|libmathtext|libtextinput|mixmax|optionparser|rendercore|x3d|xvertext|zip) ;;
         *) rm -rf "$path" ;;
       esac
     done
@@ -226,10 +210,9 @@ stdenv.mkDerivation (finalAttrs: {
     "-DClang_DIR=${finalAttrs.clang}/lib/cmake/clang"
     "-Dbuiltin_clang=OFF"
     "-Dbuiltin_llvm=OFF"
-    "-Dbuiltin_openui5=ON"
-    "-Dbuiltin_mathjax=ON"
-    "-DOPENUI5_SOURCE_DIR=${finalAttrs.openui5_src}"
-    "-DMATHJAX_SOURCE_DIR=${finalAttrs.mathjax_src}"
+    "-Dbuiltin_openui5=OFF"
+    # JSROOT is provided by the separate jsroot package, see JSROOTSYS below
+    "-Dbuiltin_jsroot=OFF"
     "-Dfail-on-missing=ON"
     "-Dfftw3=ON"
     "-Dfitsio=OFF"
@@ -243,7 +226,19 @@ stdenv.mkDerivation (finalAttrs: {
     "-Druntime_cxxmodules=OFF"
   ];
 
+  # Use JSROOT from the separate jsroot package instead of downloading it.
+  # ROOT records this location in etc/system.rootrc (HttpServ.JSRootPath).
+  env.JSROOTSYS = "${jsroot}/share/jsroot";
+
+  # Use the openui5 runtime distribution from the Nix store instead of
+  # downloading it. ROOT only symlinks it into the build tree, so it is
+  # installed in postInstall below.
+  env.OPENUI5DIR = "${finalAttrs.openui5_src}";
+
   postInstall = ''
+    # ROOT does not install the openui5 distribution passed via OPENUI5DIR
+    ln -s "$OPENUI5DIR" "$out/ui5/distribution"
+
     for prog in rooteventselector rootmv rootprint rootslimtree; do
       wrapProgram "$out/bin/$prog" \
         --set PYTHONPATH "$out/lib"
