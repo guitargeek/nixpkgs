@@ -1,0 +1,119 @@
+Allow using pre-downloaded archives for the builtin packages
+
+Add a ROOT_DOWNLOAD_DIR CMake variable that points to a directory with
+pre-downloaded archives of the packages that are otherwise downloaded with
+ExternalProject_Add for the builtin_* options. It is passed as DOWNLOAD_DIR
+to ExternalProject_Add, which skips the download when the archive with the
+expected file name and checksum is already there. The connectivity check is
+skipped as well in that case.
+
+With it, ROOT can be built with builtin_jsroot, builtin_openui5 and
+builtin_mathjax in an environment without network access, as is common for
+package managers. The archives on GitHub are byte-identical to the ones
+referenced in the build files, so they can be fetched from there upfront.
+
+---
+diff --git a/builtins/jsroot/CMakeLists.txt b/builtins/jsroot/CMakeLists.txt
+index f42b2703b0f..7741d5a9f5f 100644
+--- a/builtins/jsroot/CMakeLists.txt
++++ b/builtins/jsroot/CMakeLists.txt
+@@ -7,6 +7,7 @@
+ ExternalProject_Add(BUILTIN_JSROOT
+   URL            https://github.com/root-project/jsroot/releases/download/7.12.0/JsRoot7120.tar.gz
+   URL_HASH       SHA256=e5d82888750bda70090ac4bff355734000372c983a3eff11d67efa09f30d4b06
++  ${ROOT_DOWNLOAD_DIR_ARGS}
+ 
+ #  GIT_REPOSITORY https://github.com/root-project/jsroot.git
+ #  GIT_TAG        7.12.0
+diff --git a/builtins/mathjax/CMakeLists.txt b/builtins/mathjax/CMakeLists.txt
+index 9c93b70f588..5394bab48a5 100644
+--- a/builtins/mathjax/CMakeLists.txt
++++ b/builtins/mathjax/CMakeLists.txt
+@@ -2,6 +2,7 @@ ExternalProject_Add(
+    BUILTIN_MATHJAX
+    URL ${lcgpackages}/mathjax-3.2.0.tar.gz
+    URL_HASH SHA256=6847f1cfdd980afbe31b466474da301a56ab859a67d8035442b052dd4ac2fa03
++   ${ROOT_DOWNLOAD_DIR_ARGS}
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+diff --git a/builtins/openui5/CMakeLists.txt b/builtins/openui5/CMakeLists.txt
+index a9b00e1a1ea..d01f3463028 100644
+--- a/builtins/openui5/CMakeLists.txt
++++ b/builtins/openui5/CMakeLists.txt
+@@ -4,6 +4,7 @@ ExternalProject_Add(
+     OPENUI5
+     URL ${lcgpackages}/openui5-runtime-${OPENUI5_VERSION}.zip
+     URL_HASH SHA256=4882023d4760ed4c20602e36dd183b02a538fc7e8bbfda607b6e25bd1cbbcdb1
++    ${ROOT_DOWNLOAD_DIR_ARGS}
+     CONFIGURE_COMMAND ""
+     BUILD_COMMAND ""
+     INSTALL_COMMAND ""
+diff --git a/cmake/modules/SearchInstalledSoftware.cmake b/cmake/modules/SearchInstalledSoftware.cmake
+index b297f769fe3..0a07d160d72 100644
+--- a/cmake/modules/SearchInstalledSoftware.cmake
++++ b/cmake/modules/SearchInstalledSoftware.cmake
+@@ -4,8 +4,21 @@
+ # For the licensing terms see $ROOTSYS/LICENSE.
+ # For the list of contributors see $ROOTSYS/README/CREDITS.
+ 
++#----------------------------------------------------------------------------
++# Directory with pre-downloaded archives of the packages that are otherwise
++# downloaded with ExternalProject_Add for the builtin_* options. If an archive
++# with the expected file name and checksum is found there, it is used instead
++# of being downloaded, which allows to build ROOT without network access.
++#----------------------------------------------------------------------------
++set(ROOT_DOWNLOAD_DIR "" CACHE PATH "Directory with pre-downloaded archives for the builtin_* packages")
++if(ROOT_DOWNLOAD_DIR)
++  set(ROOT_DOWNLOAD_DIR_ARGS DOWNLOAD_DIR ${ROOT_DOWNLOAD_DIR})
++endif()
++
+ #----------------------------------------------------------------------------
+ # macro ROOT_CHECK_CONNECTION(option)
++# The optional second argument is the name of the archive that would be
++# downloaded. If it is found in ROOT_DOWNLOAD_DIR, no connection is needed.
+ # Try to download a file to check internet connection.
+ # If fail-on-missing=ON is set, a failed connection check will cause a fatal
+ # configuration error.
+@@ -22,8 +35,13 @@
+ #       macro, the connection check will not run again.
+ #----------------------------------------------------------------------------
+ macro(ROOT_CHECK_CONNECTION option)
++  set(_predownloaded FALSE)
++  if(ROOT_DOWNLOAD_DIR AND NOT "${ARGN}" STREQUAL "" AND EXISTS "${ROOT_DOWNLOAD_DIR}/${ARGN}")
++    message(STATUS "Using pre-downloaded ${ARGN} from ${ROOT_DOWNLOAD_DIR}")
++    set(_predownloaded TRUE)
++  endif()
+   # Do something only if connection check is not already done
+-  if(NOT DEFINED NO_CONNECTION)
++  if(NOT _predownloaded AND NOT DEFINED NO_CONNECTION)
+     if(NOT check_connection)
+       # If the connection check is disabled, just assume there is internet
+       # connection
+@@ -1115,7 +1133,7 @@ endif()
+ #------------------------------------------------------------------------------------
+ 
+ if(builtin_jsroot)
+-  ROOT_CHECK_CONNECTION("builtin_jsroot=OFF")
++  ROOT_CHECK_CONNECTION("builtin_jsroot=OFF" "JsRoot7120.tar.gz")
+   if (NO_CONNECTION)
+     message(SEND_ERROR "builtin_jsroot=ON requires internet connection, check it or disable feature")
+     list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_jsroot=OFF)
+@@ -1134,7 +1152,7 @@ endif()
+ #------------------------------------------------------------------------------------
+ if(http AND builtin_jsroot)
+   if(builtin_mathjax)
+-    ROOT_CHECK_CONNECTION("builtin_mathjax=OFF")
++    ROOT_CHECK_CONNECTION("builtin_mathjax=OFF" "mathjax-3.2.0.tar.gz")
+     if (NO_CONNECTION)
+       message(SEND_ERROR "builtin_mathjax=ON requires internet connection, check it or disable feature")
+       list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_mathjax=OFF)
+@@ -1157,7 +1175,7 @@ if(webgui)
+        $ENV{OPENUI5DIR} ${CMAKE_BINARY_DIR}/ui5/distribution)
+     set(OPENUI5_CUSTOM_LOCATION "")
+   elseif(builtin_openui5)
+-    ROOT_CHECK_CONNECTION("builtin_openui5=OFF")
++    ROOT_CHECK_CONNECTION("builtin_openui5=OFF" "openui5-runtime-1.152.0.zip")
+     if (NO_CONNECTION)
+       message(SEND_ERROR "builtin_openui5=ON requires internet connection, check it or disable feature")
+       list(APPEND HOTFIX_BUILD_FLAGS -Dbuiltin_openui5=OFF)
