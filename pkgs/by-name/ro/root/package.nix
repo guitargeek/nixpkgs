@@ -127,6 +127,8 @@ stdenv.mkDerivation (finalAttrs: {
     ./Allow-using-pre-downloaded-archives-for-the-builtin-packages.patch
     # Otherwise, the downloaded JSROOT would not be installed
     ./Install-JSROOT-from-the-build-tree-when-builtin_jsroot-is-used.patch
+    # compiledata.sh is otherwise run via its /usr/bin/env shebang
+    ./Run-compiledata.sh-with-bash-explicitly.patch
     # The clad sources are already patched (see clad_src above)
     ./Do-not-patch-clad-when-an-external-clad-source-directory-is-used.patch
     # Since ROOT 6.42, rootcling drops all include paths that CMake reports as
@@ -197,21 +199,7 @@ stdenv.mkDerivation (finalAttrs: {
     libxext
   ];
 
-  preConfigure = ''
-    # Remove the bundled third-party sources that are not needed, to make sure
-    # that the system versions are used. The ones that are kept are either
-    # hard-coded builtins without a system alternative, or the ones enabled
-    # explicitly in cmakeFlags.
-    for path in builtins/*; do
-      case "$(basename "$path")" in
-        bvh|CDT|clib|csg|exprtk|glad|jsroot|libAfterImage|libmathtext|libtextinput|mathjax|mixmax|openui5|optionparser|rendercore|x3d|xvertext|zip) ;;
-        *) rm -rf "$path" ;;
-      esac
-    done
-
-    patchShebangs cmake/unix/
-  ''
-  +
+  preConfigure =
     lib.optionalString
       (stdenv.hostPlatform.isDarwin && lib.versionAtLeast stdenv.hostPlatform.darwinMinVersion "11")
       ''

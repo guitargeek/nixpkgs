@@ -1,0 +1,23 @@
+Run compiledata.sh with bash explicitly
+
+The script was executed directly, relying on its "#!/usr/bin/env bash"
+shebang. This does not work in build environments without /usr/bin/env,
+such as the Nix build sandbox, where packagers had to patch the shebang
+before configuring. Invoke it via bash instead, like the build system
+already does for other shell and Python scripts. The script needs bash
+rather than sh, as it uses "==" in test expressions.
+
+---
+diff --git a/cmake/modules/RootConfiguration.cmake b/cmake/modules/RootConfiguration.cmake
+index 611881ad53e..4b56c1402b0 100644
+--- a/cmake/modules/RootConfiguration.cmake
++++ b/cmake/modules/RootConfiguration.cmake
+@@ -728,7 +728,7 @@ else()
+     # Only set the compiledata parameter if the CMake variable is 'true'
+     set(local_ROOT_COMPILEDATA_IGNORE_BUILD_NODE_CHANGES ${ROOT_COMPILEDATA_IGNORE_BUILD_NODE_CHANGES})
+   endif()
+-  execute_process(COMMAND ${CMAKE_SOURCE_DIR}/cmake/unix/compiledata.sh
++  execute_process(COMMAND bash ${CMAKE_SOURCE_DIR}/cmake/unix/compiledata.sh
+     ${CMAKE_BINARY_DIR}/ginclude/compiledata.h "${CMAKE_CXX_COMPILER}"
+         "${CMAKE_CXX_FLAGS_RELEASE}" "${CMAKE_CXX_FLAGS_DEBUG}" "${CMAKE_CXX_ACLIC_FLAGS}"
+         "${CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS}" "${CMAKE_EXE_LINKER_FLAGS}" "so"
