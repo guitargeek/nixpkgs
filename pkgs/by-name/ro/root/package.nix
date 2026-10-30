@@ -4,17 +4,16 @@
   applyPatches,
   blas,
   callPackage,
+  cfitsio,
   civetweb,
   curl,
   fetchFromGitHub,
   fetchurl,
   linkFarm,
   makeWrapper,
-  writeText,
   apple-sdk,
   cmake,
   coreutils,
-  git,
   davix,
   fftw,
   ftgl,
@@ -41,6 +40,7 @@
   pkg-config,
   procps,
   python3,
+  sqlite,
   which,
   xxhash,
   zlib,
@@ -59,10 +59,14 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "root";
-  version = "6.42.00-unstable-2026-10-30";
+  # The last tag reachable from the master branch, which the PR is based on
+  version = "6.41.99-unstable-2026-10-30";
 
   passthru = {
-    tests = import ./tests { inherit callPackage; };
+    tests = import ./tests { inherit callPackage; } // {
+      # The Python package runs the import checks for the PyROOT bindings
+      pyroot = python3.pkgs.root;
+    };
   };
 
   # https://github.com/root-project/root/pull/23877
@@ -143,7 +147,6 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper
     cmake
     pkg-config
-    git
   ];
   propagatedBuildInputs = [
     nlohmann_json # link interface of target "ROOT::ROOTEve"
@@ -151,6 +154,7 @@ stdenv.mkDerivation (finalAttrs: {
   buildInputs = [
     finalAttrs.clang
     blas
+    cfitsio
     (civetweb.override {
       # ROOT requires civetweb with websocket, zlib and unix domain socket support
       withWebSockets = true;
@@ -177,6 +181,7 @@ stdenv.mkDerivation (finalAttrs: {
     patchRcPathPosix
     pcre2
     python3
+    sqlite
     onetbb
     xrootd
     xxhash
@@ -208,9 +213,7 @@ stdenv.mkDerivation (finalAttrs: {
     "-DROOT_DOWNLOAD_DIR=${finalAttrs.builtin_downloads}"
     "-Dfail-on-missing=ON"
     "-Dfftw3=ON"
-    "-Dfitsio=OFF"
     "-Dmathmore=ON"
-    "-Dsqlite=OFF"
     "-Dvdt=OFF"
   ]
   ++ lib.optionals stdenv.hostPlatform.isDarwin [
@@ -285,11 +288,17 @@ stdenv.mkDerivation (finalAttrs: {
   meta = {
     homepage = "https://root.cern/";
     description = "Data analysis framework";
+    changelog =
+      if lib.hasInfix "-unstable-" finalAttrs.version then
+        "https://root.cern/doc/master/release-notes.html"
+      else
+        "https://root.cern/doc/v${lib.versions.major finalAttrs.version}${lib.versions.minor finalAttrs.version}/release-notes.html";
     platforms = lib.platforms.unix;
     maintainers = [
       lib.maintainers.guitargeek
       lib.maintainers.veprbl
     ];
-    license = lib.licenses.lgpl21;
+    license = lib.licenses.lgpl21Plus;
+    mainProgram = "root";
   };
 })
