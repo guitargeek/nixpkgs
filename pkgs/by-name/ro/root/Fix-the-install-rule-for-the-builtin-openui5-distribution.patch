@@ -1,0 +1,21 @@
+Fix the install rule for the builtin openui5 distribution
+
+The directory permissions were added after FILES_MATCHING PATTERN, where
+install(DIRECTORY) only accepts EXCLUDE and PERMISSIONS, so configuration
+fails with:
+
+  install DIRECTORY does not allow "DIRECTORY_PERMISSIONS" after PATTERN or REGEX.
+
+Move them in front of FILES_MATCHING.
+
+---
+diff --git a/builtins/openui5/CMakeLists.txt b/builtins/openui5/CMakeLists.txt
+index 938209f6b0f..3cb63363558 100644
+--- a/builtins/openui5/CMakeLists.txt
++++ b/builtins/openui5/CMakeLists.txt
+@@ -11,4 +11,4 @@ ExternalProject_Add(
+     TIMEOUT 600
+ )
+ 
+-install(DIRECTORY ${CMAKE_BINARY_DIR}/ui5/distribution/ DESTINATION ${CMAKE_INSTALL_OPENUI5DIR}/distribution/ COMPONENT libraries FILES_MATCHING PATTERN "*" ${DIR_PERMISSIONS})
++install(DIRECTORY ${CMAKE_BINARY_DIR}/ui5/distribution/ DESTINATION ${CMAKE_INSTALL_OPENUI5DIR}/distribution/ COMPONENT libraries ${DIR_PERMISSIONS} FILES_MATCHING PATTERN "*")

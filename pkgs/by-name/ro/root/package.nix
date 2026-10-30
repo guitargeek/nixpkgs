@@ -59,7 +59,7 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "root";
-  version = "6.42.00-unstable-2026-10-29";
+  version = "6.42.00-unstable-2026-10-30";
 
   passthru = {
     tests = import ./tests { inherit callPackage; };
@@ -69,8 +69,8 @@ stdenv.mkDerivation (finalAttrs: {
   src = fetchFromGitHub {
     owner = "linev";
     repo = "root";
-    rev = "4a3cce21f3dc8a4932317f24603d79c0c300ee2a";
-    hash = "sha256-moK1eFgAlAoyDABHsGqXNW7KdQ3YCLZUNTKR3wjZdYQ=";
+    rev = "cdb07801f9c361e8c5dab4c016851c99df18ed81";
+    hash = "sha256-fS5rEJCNtzaxFnHSRkR5IHYAGAwyoE8UuTAFOOuuSKE=";
   };
 
   # Archives of the packages that ROOT would otherwise download at build time
@@ -110,9 +110,9 @@ stdenv.mkDerivation (finalAttrs: {
       tag = "v2.5";
       hash = "sha256-NIU2Sp8eBMpQ+1bSdykVnJJKTo8KS/2hBVKPAg1MwGg=";
     };
-    # ROOT would apply these patches itself at build time with git, which
-    # doesn't work on the read-only source in the Nix store. Make sure that
-    # these are the same patches as in the ROOT build files!
+    # ROOT applies these patches to its own clad download, but not to an
+    # external clad source directory. Make sure that these are the same
+    # patches as in the ROOT build files!
     # https://github.com/root-project/root/blob/master/interpreter/cling/tools/plugins/clad/CMakeLists.txt#L102
     patches = [
       "${finalAttrs.src}/interpreter/cling/tools/plugins/clad/patches/lld_lookup_no_default_path.patch"
@@ -125,12 +125,10 @@ stdenv.mkDerivation (finalAttrs: {
   patches = [
     # Adds the ROOT_DOWNLOAD_DIR CMake variable, see builtin_downloads above
     ./Allow-using-pre-downloaded-archives-for-the-builtin-packages.patch
-    # Otherwise, the downloaded JSROOT would not be installed
-    ./Install-JSROOT-from-the-build-tree-when-builtin_jsroot-is-used.patch
+    # Configuration error in the PR branch, see the patch
+    ./Fix-the-install-rule-for-the-builtin-openui5-distribution.patch
     # compiledata.sh is otherwise run via its /usr/bin/env shebang
     ./Run-compiledata.sh-with-bash-explicitly.patch
-    # The clad sources are already patched (see clad_src above)
-    ./Do-not-patch-clad-when-an-external-clad-source-directory-is-used.patch
     # Since ROOT 6.42, rootcling drops all include paths that CMake reports as
     # compiler default include directories, assuming that cling will find
     # them on its own. See:
